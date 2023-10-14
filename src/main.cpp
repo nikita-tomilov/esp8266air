@@ -25,6 +25,19 @@ DHTesp dht;
 #define eco2_topic "esp8266air/eco2"
 #define tvoc_topic "esp8266air/tvoc"
 
+int x = 6;
+
+uint16_t eco2ppm = 0;
+uint16_t tvoc = 0;
+
+float temp = 0.0f;
+float pressHPa = 0.0f;
+float humidity = 0.0f;
+
+long lastValuesUpdate = 0;
+long lastMqttUpdate = 0;
+long lastButtonPress = 0;
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -118,20 +131,8 @@ void setup()
   setupWifi();
 
   pinMode(0, INPUT);
+  lastButtonPress = millis();
 }
-
-int x = 6;
-
-uint16_t eco2ppm = 0;
-uint16_t tvoc = 0;
-
-float temp = 0.0f;
-float pressHPa = 0.0f;
-float humidity = 0.0f;
-
-long lastValuesUpdate = 0;
-long lastMqttUpdate = 0;
-long lastButtonPress = 0;
 
 void updateVals()
 {
