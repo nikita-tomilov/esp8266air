@@ -40,7 +40,6 @@ void printLog(String log)
 void setupWifi()
 {
   delay(10);
-  // We start by connecting to a WiFi network
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(wifi_ssid);
@@ -85,7 +84,7 @@ void setupPeripherals()
   }
   Serial.println("BMP280 done");
 
-  dht.setup(13, DHTesp::DHT11); // Connect DHT sensor to GPIO 17
+  dht.setup(13, DHTesp::DHT11);
   Serial.println("DHT done");
 
   // AIR TVOC setup
@@ -99,7 +98,7 @@ void setupPeripherals()
   }
   while (!ccs.available())
   {
-    printLog("Waiting for CCS");
+    printLog("Waiting for CCS811");
     delay(500);
   };
 }
@@ -113,11 +112,12 @@ void setup()
   delay(2000);
 
   Serial.begin(115200);
-  while (!Serial)
-    ; // Leonardo: wait for serial monitor
+  while (!Serial);
 
   setupPeripherals();
   setupWifi();
+
+  pinMode(0, INPUT);
 }
 
 int x = 6;
@@ -131,6 +131,7 @@ float humidity = 0.0f;
 
 long lastValuesUpdate = 0;
 long lastMqttUpdate = 0;
+long lastButtonPress = 0;
 
 void updateVals()
 {
@@ -147,7 +148,6 @@ void updateVals()
   pressHPa = bmp.readPressure() / 100.0F;
   humidity = dht.getHumidity();
 }
-
 
 void drawVals(void)
 {
@@ -169,12 +169,14 @@ void drawVals(void)
   u8g2.printf("TVOC %d ppb\n", tvoc);
 
   x += 1;
-  if (x > 26) {
+  if (x > 26)
+  {
     x = 6;
   }
 }
 
-void sendVals() {
+void sendVals()
+{
   client.publish(temperature_topic, String(temp).c_str(), true);
   client.publish(pressure_topic, String(pressHPa).c_str(), true);
   client.publish(humidity_topic, String(humidity).c_str(), true);
@@ -184,13 +186,9 @@ void sendVals() {
 
 void reconnect()
 {
-  // Loop until we're reconnected
   while (!client.connected())
   {
     Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
-    // If you do not want to use a username and password, change next line to
-    // if (client.connect("ESP8266Client")) {
     if (client.connect("ESP8266Client", mqtt_user, mqtt_password))
     {
       Serial.println("connected");
@@ -221,8 +219,16 @@ void loop()
     updateVals();
 
     u8g2.clearBuffer();
-    drawVals();
+    if (now - lastButtonPress < 5000)
+    {
+      drawVals();
+    }
     u8g2.sendBuffer();
+  }
+
+  if (digitalRead(0) == 0)
+  {
+    lastButtonPress = millis();
   }
 
   if (now - lastMqttUpdate > 10000)
