@@ -182,6 +182,8 @@ void sendVals()
   client.publish(humidity_topic, String(humidity).c_str(), true);
   client.publish(eco2_topic, String(eco2ppm).c_str(), true);
   client.publish(tvoc_topic, String(tvoc).c_str(), true);
+
+  ccs.setEnvironmentalData(humidity, temp);
 }
 
 void reconnect()
