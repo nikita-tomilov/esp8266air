@@ -1,37 +1,25 @@
 #include <Arduino.h>
 #include <Wire.h>
-
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BMP280.h>
-#include <Adafruit_CCS811.h>
-#include "DHTesp.h"
+#include <SensirionI2CScd4x.h>
 #include <U8g2lib.h>
 
 #define SEALEVELPRESSURE_HPA (1013.25)
-Adafruit_BMP280 bmp;
 unsigned long delayTime;
 
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
-Adafruit_CCS811 ccs;
-DHTesp dht;
 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include "wificreds.h"
 
 #define temperature_topic "esp8266air/temperature"
-#define pressure_topic "esp8266air/pressure"
 #define humidity_topic "esp8266air/humidity"
-#define eco2_topic "esp8266air/eco2"
-#define tvoc_topic "esp8266air/tvoc"
-
+#define co2_topic "esp8266air/co2"
+SensirionI2CScd4x scd4x;
 int x = 6;
 
-uint16_t eco2ppm = 0;
-uint16_t tvoc = 0;
-
+uint16_t co2ppm = 0;
 float temp = 0.0f;
-float pressHPa = 0.0f;
 float humidity = 0.0f;
 
 long lastValuesUpdate = 0;
@@ -80,94 +68,131 @@ void setupPeripherals()
   // OLED setup
   u8g2.begin();
   Serial.println("OLED done");
+  printLog("Setup started");
+}
 
-  // BMP280 setup
-  unsigned status = bmp.begin(0x76);
-  if (!status)
+void setupScd()
+{
+
+  uint16_t error;
+  char errorMessage[256];
+
+  scd4x.begin(Wire);
+
+  // stop potentially previously started measurement
+  error = scd4x.stopPeriodicMeasurement();
+  if (error)
   {
-    Serial.println("Could not find a valid BME280 sensor, check wiring, address, sensor ID!");
-    Serial.print("SensorID was: 0x");
-    Serial.println(bmp.sensorID(), 16);
-    Serial.print("        ID of 0xFF probably means a bad address, a BMP 180 or BMP 085\n");
-    Serial.print("   ID of 0x56-0x58 represents a BMP 280,\n");
-    Serial.print("        ID of 0x60 represents a BME 280.\n");
-    Serial.print("        ID of 0x61 represents a BME 680.\n");
-    while (1)
-      delay(10);
+    Serial.print("Error trying to execute stopPeriodicMeasurement(): ");
+    errorToString(error, errorMessage, 256);
+    Serial.println(errorMessage);
   }
-  Serial.println("BMP280 done");
 
-  dht.setup(13, DHTesp::DHT11);
-  Serial.println("DHT done");
-
-  // AIR TVOC setup
-  if (!ccs.begin(0x5A))
+  uint16_t serial0;
+  uint16_t serial1;
+  uint16_t serial2;
+  error = scd4x.getSerialNumber(serial0, serial1, serial2);
+  if (error)
   {
-    while (1)
-    {
-      Serial.println("Failed to start sensor! Please check your wiring.");
-      delay(500);
-    }
+    Serial.print("Error trying to execute getSerialNumber(): ");
+    errorToString(error, errorMessage, 256);
+    Serial.println(errorMessage);
   }
-  while (!ccs.available())
+  else
   {
-    printLog("Waiting for CCS811");
-    delay(500);
-  };
+    Serial.print("SCD OK, serial: ");
+    Serial.print(serial0);
+    Serial.print(serial1);
+    Serial.println(serial2);
+  }
+
+  error = scd4x.startPeriodicMeasurement();
+  if (error)
+  {
+    Serial.print("Error trying to execute startPeriodicMeasurement(): ");
+    errorToString(error, errorMessage, 256);
+    Serial.println(errorMessage);
+  }
+
+  Serial.println("Waiting for first measurement... (5 sec)");
 }
 
 void setup()
 {
-
   Wire.begin();
   printLog("BOOT");
 
   delay(2000);
 
   Serial.begin(115200);
-  while (!Serial);
+  while (!Serial)
+    ;
 
   setupPeripherals();
   setupWifi();
 
   pinMode(0, INPUT);
   lastButtonPress = millis();
+
+  Wire.begin();
+  setupScd();
 }
 
 void updateVals()
 {
-  if (ccs.available())
+  char errorMessage[256];
+  uint16_t lco2 = 0;
+  float lt = 0.0f;
+  float lh = 0.0f;
+  bool isDataReady = false;
+  int error = scd4x.getDataReadyFlag(isDataReady);
+  if (error)
   {
-    if (!ccs.readData())
-    {
-      eco2ppm = ccs.geteCO2();
-      tvoc = ccs.getTVOC();
-    }
+    Serial.print("Error trying to execute getDataReadyFlag(): ");
+    errorToString(error, errorMessage, 256);
+    Serial.println(errorMessage);
+    return;
   }
-
-  temp = bmp.readTemperature();
-  pressHPa = bmp.readPressure() / 100.0F;
-  humidity = dht.getHumidity();
+  if (!isDataReady)
+  {
+    return;
+  }
+  Serial.println("Data ready");
+  error = scd4x.readMeasurement(lco2, lt, lh);
+  if (error)
+  {
+    Serial.print("Error trying to execute readMeasurement(): ");
+    errorToString(error, errorMessage, 256);
+    Serial.println(errorMessage);
+  }
+  else if (lco2 == 0)
+  {
+    Serial.println("Invalid sample detected, skipping.");
+  }
+  else
+  {
+    Serial.println("Valid sample detected");
+    temp = lt;
+    co2ppm = lco2;
+    humidity = lh;
+    Serial.print(co2ppm);
+    Serial.print(" ppm; ");
+    Serial.print(temp);
+    Serial.print(" C; %");
+    Serial.println(humidity);
+  }
 }
 
 void drawVals(void)
 {
-  float temp = bmp.readTemperature();
-  float pressHPa = bmp.readPressure() / 100.0F;
-  float humidity = dht.getHumidity();
-
   u8g2.setFont(u8g2_font_6x12_tr);
   u8g2.setCursor(x, 12);
   u8g2.printf("T %.2f C\n", temp);
   u8g2.setCursor(x, 24);
-  u8g2.printf("P %.2f hPa\n", pressHPa);
-  u8g2.setCursor(x, 36);
   u8g2.printf("H %.0f %% \n", humidity);
 
-  u8g2.setCursor(x, 48);
-  u8g2.printf("CO2 %d ppm\n", eco2ppm);
-  u8g2.setCursor(x, 60);
-  u8g2.printf("TVOC %d ppb\n", tvoc);
+  u8g2.setCursor(x, 36);
+  u8g2.printf("CO2 %d ppm\n", co2ppm);
 
   x += 1;
   if (x > 26)
@@ -179,12 +204,8 @@ void drawVals(void)
 void sendVals()
 {
   client.publish(temperature_topic, String(temp).c_str(), true);
-  client.publish(pressure_topic, String(pressHPa).c_str(), true);
   client.publish(humidity_topic, String(humidity).c_str(), true);
-  client.publish(eco2_topic, String(eco2ppm).c_str(), true);
-  client.publish(tvoc_topic, String(tvoc).c_str(), true);
-
-  ccs.setEnvironmentalData(humidity, temp);
+  client.publish(co2_topic, String(co2ppm).c_str(), true);
 }
 
 void reconnect()
