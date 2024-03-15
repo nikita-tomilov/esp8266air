@@ -70,6 +70,7 @@ void setupPeripherals()
 {
   // OLED setup
   u8g2.begin();
+  u8g2.setFlipMode(2);
   Serial.println("OLED done");
   printLog("Setup started");
 }
