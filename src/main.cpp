@@ -21,6 +21,8 @@ int x = 6;
 uint16_t co2ppm = 0;
 float temp = 0.0f;
 float humidity = 0.0f;
+#define temp_offset -2.0f;
+#define hum_offset 20.0f;
 bool valAcquired = false;
 
 long lastValuesUpdate = 0;
@@ -173,9 +175,9 @@ void updateVals()
   else
   {
     Serial.println("Valid sample detected");
-    temp = lt;
+    temp = lt + temp_offset;
     co2ppm = lco2;
-    humidity = lh;
+    humidity = lh + hum_offset;
     valAcquired = true;
     Serial.print(co2ppm);
     Serial.print(" ppm; ");
