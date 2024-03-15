@@ -21,6 +21,7 @@ int x = 6;
 uint16_t co2ppm = 0;
 float temp = 0.0f;
 float humidity = 0.0f;
+bool valAcquired = false;
 
 long lastValuesUpdate = 0;
 long lastMqttUpdate = 0;
@@ -175,6 +176,7 @@ void updateVals()
     temp = lt;
     co2ppm = lco2;
     humidity = lh;
+    valAcquired = true;
     Serial.print(co2ppm);
     Serial.print(" ppm; ");
     Serial.print(temp);
@@ -203,9 +205,16 @@ void drawVals(void)
 
 void sendVals()
 {
-  client.publish(temperature_topic, String(temp).c_str(), true);
-  client.publish(humidity_topic, String(humidity).c_str(), true);
-  client.publish(co2_topic, String(co2ppm).c_str(), true);
+  if (valAcquired)
+  {
+    client.publish(temperature_topic, String(temp).c_str(), true);
+    client.publish(humidity_topic, String(humidity).c_str(), true);
+    client.publish(co2_topic, String(co2ppm).c_str(), true);
+  }
+  else
+  {
+    Serial.println("Val not acquired");
+  }
 }
 
 void reconnect()
